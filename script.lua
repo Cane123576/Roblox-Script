@@ -5,11 +5,11 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
-local ESP_Enabled, AutoPick_Enabled = false, false
+local ESP_Enabled, AutoPick_Enabled, AntiFling_Enabled = false, false, false
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. СТАБІЛЬНА ЛОГІКА ESP ТА СУПЕР-ПЛАВНИЙ INVISIBLE PICK
+-- 1. ЛОГІКА СКРИПТІВ (ESP, INVISIBLE PICK, ANTI-FLING)
 -- ==========================================
 local function getPlayerRole(player)
     local playerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
@@ -55,7 +55,6 @@ local function updateESPState()
     for _, p in pairs(Players:GetPlayers()) do if ESP_Enabled then manageESP(p) else removeESP(p) end end
 end
 
--- ПОШУК ПІСТОЛЕТА ЧЕРЕЗ СВІТЛОВІ МАРКЕРИ MM2
 local function getGunPosition()
     for _, v in pairs(Workspace:GetDescendants()) do
         if v:IsA("Beam") and v.Name == "LightBeam" or v.Parent and v.Parent.Name == "GunDrop" then
@@ -66,45 +65,45 @@ local function getGunPosition()
     return nil
 end
 
--- МЕТОД НЕВИДИМОГО КЛІК-ПІДБОРУ (ДЕСИНХРОНІЗАЦІЯ ЗА 50 МІЛІСЕКУНД)
+-- МЕТОД НЕВИДИМОГО КЛІК-ПІДБОРУ
 task.spawn(function()
     while true do
-        task.wait(0.2) -- Легка перевірка карти без навантаження на процесор
-        if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        task.wait(0.2)
+        if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local gunObject = getGunPosition()
-            
-            -- Якщо пістолет лежить і у нас його ще немає
             if gunObject and not LocalPlayer.Backpack:FindFirstChild("Gun") and not LocalPlayer.Character:FindFirstChild("Gun") then
                 local char = LocalPlayer.Character
                 local hrp = char.HumanoidRootPart
-                local oldCFrame = hrp.CFrame -- Запам'ятовуємо, де ми стояли
-                
-                -- КРОК 1: Тимчасовий Desync (вимикаємо колізію тіла, щоб гра не зафіксувала політ)
+                local oldCFrame = hrp.CFrame
                 for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+                hrp.CFrame = gunObject.CFrame
+                if firetouchinterest then
+                    firetouchinterest(hrp, gunObject, 0)
+                    RunService.Stepped:Wait()
+                    firetouchinterest(hrp, gunObject, 1)
+                end
+                hrp.CFrame = oldCFrame
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+                task.wait(2.5)
+            end
+        end
+    end
+end)
+
+-- СИСТЕМА АНТИ-ФЛІНГУ (ПОСТІЙНЕ ВИМКНЕННЯ КОЛІЗІЇ З ІНШИМИ ГРАВЦЯМИ)
+RunService.Stepped:Connect(function()
+    if AntiFling_Enabled and LocalPlayer.Character then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                for _, part in pairs(player.Character:GetChildren()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                     end
                 end
-                
-                -- КРОК 2: Надшвидкий стрибок на 1 такт фізики (близько 15-30 мс)
-                hrp.CFrame = gunObject.CFrame
-                if firetouchinterest then
-                    firetouchinterest(hrp, gunObject, 0)
-                    RunService.Stepped:Wait() -- Очікування рівно одного фізичного кадру двигуна Roblox!
-                    firetouchinterest(hrp, gunObject, 1)
-                end
-                
-                -- КРОК 3: Повернення назад за наступний кадр (загалом процес триває ~50 мс)
-                hrp.CFrame = oldCFrame
-                
-                -- Відновлюємо фізику тіла
-                for _, part in pairs(char:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
-                end
-                
-                task.wait(2.5) -- Велика захисна пауза, щоб чит не спамив після успішного підбору
             end
         end
     end
@@ -238,8 +237,10 @@ local function createToggle(parentPage, text, defaultState, callback)
     end)
 end
 
+-- НАПОВНЕННЯ СТАНДАРТНИХ КНОПОК В ТАБІ MAIN
 createToggle(Pages["Main"], "Enable Role ESP", false, function(v) ESP_Enabled = v updateESPState() end)
 createToggle(Pages["Main"], "Auto-Pick Gun", false, function(v) AutoPick_Enabled = v end)
+createToggle(Pages["Main"], "Anti-Fling (NoCollide)", false, function(v) AntiFling_Enabled = v end)
 
 local function makeLabel(p, txt)
     local lbl = Instance.new("TextLabel")
