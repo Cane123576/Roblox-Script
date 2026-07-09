@@ -8,7 +8,7 @@ local ESP_Enabled, AutoPick_Enabled = false, false
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. ЛОГІКА СКРИПТІВ (ESP ТА AUTO-PICK)
+-- 1. ПОКРАЩЕНА ЛОГІКА СКРИПТІВ (ESP ТА НАДІЙНИЙ TWEEN AUTO-PICK)
 -- ==========================================
 local function getPlayerRole(player)
     local playerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
@@ -54,26 +54,50 @@ local function updateESPState()
     for _, p in pairs(Players:GetPlayers()) do if ESP_Enabled then manageESP(p) else removeESP(p) end end
 end
 
+-- НАДІЙНИЙ ДВИГУН ДЛЯ ПІДБОРУ ЧЕРЕЗ TWEEN (ОБХІД ЗАХИСТУ MM2 НА ПК)
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.2)
         if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local gunDrop = Workspace:FindFirstChild("GunDrop")
-            if gunDrop and gunDrop:IsA("Part") then
+            
+            -- Проверяем наличие пистолета на карте
+            if gunDrop and gunDrop:IsA("Part") and not LocalPlayer.Backpack:FindFirstChild("Gun") and not LocalPlayer.Character:FindFirstChild("Gun") then
                 local hrp = LocalPlayer.Character.HumanoidRootPart
-                local oldCF, startT = hrp.CFrame, tick()
-                while gunDrop and gunDrop.Parent == Workspace and (tick() - startT) < 1 do
+                local oldCF = hrp.CFrame
+                
+                -- Рассчитываем сверхбыструю, но плавную скорость полета (Твин)
+                local distance = (hrp.Position - gunDrop.Position).Magnitude
+                local speed = 120 -- Скорость полета (оптимально для Xeno)
+                local tweenInfo = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
+                
+                -- Летим к пистолету
+                local flyTo = TweenService:Create(hrp, tweenInfo, {CFrame = gunDrop.CFrame})
+                flyTo:Play()
+                flyTo.Completed:Wait() -- Ждем окончания полета
+                
+                -- Задерживаемся на пуле на полсекунды для стопроцентного дотика
+                local startT = tick()
+                while gunDrop and gunDrop.Parent == Workspace and (tick() - startT) < 0.6 do
                     hrp.CFrame = gunDrop.CFrame
-                    task.wait()
+                    if firetouchinterest then
+                        firetouchinterest(hrp, gunDrop, 0)
+                        firetouchinterest(hrp, gunDrop, 1)
+                    end
+                    task.wait(0.05)
                 end
-                hrp.CFrame = oldCF
+                
+                -- Возвращаемся обратно на твине, чтобы не кикнуло
+                local flyBack = TweenService:Create(hrp, tweenInfo, {CFrame = oldCF})
+                flyBack:Play()
+                flyBack.Completed:Wait()
             end
         end
     end
 end)
 
 -- ==========================================
--- 2. СТВОРЕННЯ СУЧАСНОЇ ЮІШКИ
+-- 2. СТВОРЕННЯ СУЧАСНОЇ ЮІШКИ (ПОЧАТОК)
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui")
 if syn and syn.protect_gui then syn.protect_gui(ScreenGui) end
@@ -95,7 +119,6 @@ MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 local mStrik = Instance.new("UIStroke", MainFrame)
 mStrik.Color, mStrik.Thickness = Color3.fromRGB(35, 35, 38), 1.2
-
 local TopBar = Instance.new("Frame")
 TopBar.Size, TopBar.BackgroundTransparency, TopBar.Parent = UDim2.new(1, 0, 0, 40), 1, MainFrame
 
@@ -105,9 +128,10 @@ HubTitle.Text, HubTitle.RichText, HubTitle.TextColor3 = "Cane Hub <font color='#
 HubTitle.TextSize, HubTitle.Font, HubTitle.TextXAlignment = 16, Enum.Font.SourceSansBold, Enum.TextXAlignment.Left
 HubTitle.Parent = TopBar
 
+-- НАДІЙНА КНОПКА ЗАКРИТТЯ У ВИГЛЯДІ ЛІТЕРИ X
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size, CloseBtn.Position, CloseBtn.BackgroundTransparency = UDim2.new(0, 30, 0, 30), UDim2.new(1, -35, 0.5, -15), 1
-CloseBtn.Text, CloseBtn.TextColor3, CloseBtn.TextSize, CloseBtn.Font = "✕", Color3.fromRGB(150, 150, 155), 16, Enum.Font.SourceSansBold
+CloseBtn.Text, CloseBtn.TextColor3, CloseBtn.TextSize, CloseBtn.Font = "X", Color3.fromRGB(150, 150, 155), 16, Enum.Font.SourceSansBold
 CloseBtn.Parent = TopBar
 
 ToggleGuiBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
@@ -200,26 +224,15 @@ local function createToggle(parentPage, text, defaultState, callback)
     end)
 end
 
-createToggle(Pages["Main"], "Enable Role ESP", false, function(v) 
-    ESP_Enabled = v 
-    updateESPState() 
-end)
-
-createToggle(Pages["Main"], "Auto-Pick Gun", false, function(v) 
-    AutoPick_Enabled = v 
-end)
+createToggle(Pages["Main"], "Enable Role ESP", false, function(v) ESP_Enabled = v updateESPState() end)
+createToggle(Pages["Main"], "Auto-Pick Gun", false, function(v) AutoPick_Enabled = v end)
 
 local function makeLabel(p, txt)
     local lbl = Instance.new("TextLabel")
     lbl.Size, lbl.BackgroundTransparency, lbl.Text = UDim2.new(1, 0, 0, 30), 1, txt
     lbl.TextColor3, lbl.TextSize, lbl.Font, lbl.Parent = Color3.fromRGB(100, 100, 105), 14, Enum.Font.SourceSansItalic, p
 end
-
 makeLabel(Pages["Murder"], "Murder functions will be here soon...")
 makeLabel(Pages["Sheriff"], "Sheriff functions will be here soon...")
 
-Players.PlayerAdded:Connect(function(p) 
-    if ESP_Enabled then 
-        manageESP(p) 
-    end 
-end)
+Players.PlayerAdded:Connect(function(p) if ESP_Enabled then manageESP(p) end end)
