@@ -3,12 +3,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local ESP_Enabled, AutoPick_Enabled = false, false
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. СТАБІЛЬНА ЛОГІКА ESP ТА АВТОПІК PULSE METHOD
+-- 1. СТАБІЛЬНА ЛОГІКА ESP ТА СУПЕР-ПЛАВНИЙ INVISIBLE PICK
 -- ==========================================
 local function getPlayerRole(player)
     local playerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
@@ -65,30 +66,45 @@ local function getGunPosition()
     return nil
 end
 
--- ШВИДКИЙ КЛІК-ТЕЛЕПОРТ ЯК У PULSE HUB (БЕЗ ЛАГІВ)
+-- МЕТОД НЕВИДИМОГО КЛІК-ПІДБОРУ (ДЕСИНХРОНІЗАЦІЯ ЗА 50 МІЛІСЕКУНД)
 task.spawn(function()
     while true do
-        task.wait(0.3) -- Розумна затримка перевірки, щоб не спамити процесор
-        if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        task.wait(0.2) -- Легка перевірка карти без навантаження на процесор
+        if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
             local gunObject = getGunPosition()
             
             -- Якщо пістолет лежить і у нас його ще немає
             if gunObject and not LocalPlayer.Backpack:FindFirstChild("Gun") and not LocalPlayer.Character:FindFirstChild("Gun") then
-                local hrp = LocalPlayer.Character.HumanoidRootPart
-                local oldCFrame = hrp.CFrame -- Запам'ятовуємо позицію
+                local char = LocalPlayer.Character
+                local hrp = char.HumanoidRootPart
+                local oldCFrame = hrp.CFrame -- Запам'ятовуємо, де ми стояли
                 
-                -- МИТТЄВИЙ КЛІК-СПРИНТ (Всього 3 кадри у грі)
+                -- КРОК 1: Тимчасовий Desync (вимикаємо колізію тіла, щоб гра не зафіксувала політ)
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+                
+                -- КРОК 2: Надшвидкий стрибок на 1 такт фізики (близько 15-30 мс)
                 hrp.CFrame = gunObject.CFrame
                 if firetouchinterest then
                     firetouchinterest(hrp, gunObject, 0)
-                    task.wait() -- Чекаємо рівно 1 кадр гри під твій пінг
+                    RunService.Stepped:Wait() -- Очікування рівно одного фізичного кадру двигуна Roblox!
                     firetouchinterest(hrp, gunObject, 1)
                 end
-                task.wait(0.05)
                 
-                -- Повертаємося назад так само миттєво
+                -- КРОК 3: Повернення назад за наступний кадр (загалом процес триває ~50 мс)
                 hrp.CFrame = oldCFrame
-                task.wait(2) -- Захисна пауза після підбору
+                
+                -- Відновлюємо фізику тіла
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+                
+                task.wait(2.5) -- Велика захисна пауза, щоб чит не спамив після успішного підбору
             end
         end
     end
