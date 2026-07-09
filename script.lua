@@ -8,7 +8,7 @@ local ESP_Enabled, AutoPick_Enabled = false, false
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. ПОКРАЩЕНА ЛОГІКА СКРИПТІВ (ESP ТА НАДІЙНИЙ TWEEN AUTO-PICK)
+-- 1. РОЗУМНА ЛОГІКА ESP ТА ПОШУКУ ПІСТОЛЕТА ПО КАРТІ
 -- ==========================================
 local function getPlayerRole(player)
     local playerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
@@ -54,40 +54,57 @@ local function updateESPState()
     for _, p in pairs(Players:GetPlayers()) do if ESP_Enabled then manageESP(p) else removeESP(p) end end
 end
 
--- НАДІЙНИЙ ДВИГУН ДЛЯ ПІДБОРУ ЧЕРЕЗ TWEEN (ОБХІД ЗАХИСТУ MM2 НА ПК)
+-- ФУНКЦІЯ АВТОМАТИЧНОГО СКАНИКА КАРТИ НА ПІСТОЛЕТ, ЩО ВИПАВ
+local function findDroppedGun()
+    -- Шукаємо будь-яку деталь на карті, яка має триггер дотику і схожа на зброю шерифа
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("TouchTransmitter") and obj.Parent then
+            local parent = obj.Parent
+            -- Перевіряємо за класичними ознаками випавшої зброї в MM2
+            if parent.Name == "GunDrop" or parent:FindFirstChild("Knife") == nil and (parent:IsA("Part") or parent:IsA("MeshPart")) and parent.Parent == Workspace then
+                return parent
+            elseif parent.Parent and parent.Parent.Name == "GunDrop" then
+                return parent.Parent
+            end
+        end
+    end
+    return nil
+end
+
+-- НАДІЙНИЙ TWEEN-ПІДБІР З ОБХОДОМ СЕРВЕРНОГО ЗАХИСТУ
 task.spawn(function()
     while true do
         task.wait(0.2)
         if AutoPick_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local gunDrop = Workspace:FindFirstChild("GunDrop")
+            -- Викликаємо наш новий розумний пошук
+            local targetGun = findDroppedGun()
             
-            -- Проверяем наличие пистолета на карте
-            if gunDrop and gunDrop:IsA("Part") and not LocalPlayer.Backpack:FindFirstChild("Gun") and not LocalPlayer.Character:FindFirstChild("Gun") then
+            if targetGun and not LocalPlayer.Backpack:FindFirstChild("Gun") and not LocalPlayer.Character:FindFirstChild("Gun") then
                 local hrp = LocalPlayer.Character.HumanoidRootPart
                 local oldCF = hrp.CFrame
                 
-                -- Рассчитываем сверхбыструю, но плавную скорость полета (Твин)
-                local distance = (hrp.Position - gunDrop.Position).Magnitude
-                local speed = 120 -- Скорость полета (оптимально для Xeno)
+                -- Розрахунок швидкості підльоту
+                local distance = (hrp.Position - targetGun.Position).Magnitude
+                local speed = 130
                 local tweenInfo = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
                 
-                -- Летим к пистолету
-                local flyTo = TweenService:Create(hrp, tweenInfo, {CFrame = gunDrop.CFrame})
+                -- Летимо безпосередньо в координати знайденого об'єкта
+                local flyTo = TweenService:Create(hrp, tweenInfo, {CFrame = targetGun.CFrame})
                 flyTo:Play()
-                flyTo.Completed:Wait() -- Ждем окончания полета
+                flyTo.Completed:Wait()
                 
-                -- Задерживаемся на пуле на полсекунды для стопроцентного дотика
+                -- Стоїмо на пістолеті та спамимо дотиками під твій пінг
                 local startT = tick()
-                while gunDrop and gunDrop.Parent == Workspace and (tick() - startT) < 0.6 do
-                    hrp.CFrame = gunDrop.CFrame
+                while targetGun Pin targetGun.Parent and (tick() - startT) < 0.8 do
+                    hrp.CFrame = targetGun.CFrame
                     if firetouchinterest then
-                        firetouchinterest(hrp, gunDrop, 0)
-                        firetouchinterest(hrp, gunDrop, 1)
+                        firetouchinterest(hrp, targetGun, 0)
+                        firetouchinterest(hrp, targetGun, 1)
                     end
                     task.wait(0.05)
                 end
                 
-                -- Возвращаемся обратно на твине, чтобы не кикнуло
+                -- Повертаємося назад на початкове місце
                 local flyBack = TweenService:Create(hrp, tweenInfo, {CFrame = oldCF})
                 flyBack:Play()
                 flyBack.Completed:Wait()
