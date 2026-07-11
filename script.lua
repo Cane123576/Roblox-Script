@@ -5,11 +5,11 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
-local ESP_Enabled, AutoPick_Enabled, AntiFling_Enabled = false, false, false
+local ESP_Enabled, AutoPick_Enabled, AntiFling_Enabled, KillAura_Enabled = false, false, false, false
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. ЛОГІКА СКРИПТІВ (ESP, INVISIBLE PICK, ANTI-FLING)
+-- 1. ОСНОВНА ЛОГІКА СКРИПТІВ ТА KILL AURA
 -- ==========================================
 local function getPlayerRole(player)
     local playerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
@@ -94,14 +94,43 @@ task.spawn(function()
     end
 end)
 
--- СИСТЕМА АНТИ-ФЛІНГУ (ПОСТІЙНЕ ВИМКНЕННЯ КОЛІЗІЇ З ІНШИМИ ГРАВЦЯМИ)
+-- СИСТЕМА АНТИ-ФЛІНГУ
 RunService.Stepped:Connect(function()
     if AntiFling_Enabled and LocalPlayer.Character then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 for _, part in pairs(player.Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
+        end
+    end
+end)
+
+-- НАДШВИДКА KILL AURA ДЛЯ ВКЛАДКИ MURDER
+task.spawn(function()
+    while true do
+        task.wait(0.03) -- Робота на частоті 30 мілісекунд (без лагів)
+        if KillAura_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            -- Шукаємо ніж у рюкзаку або вже в руках
+            local knife = LocalPlayer.Backpack:FindFirstChild("Knife") or LocalPlayer.Character:FindFirstChild("Knife")
+            
+            if knife then
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") then
+                        local enemyHrp = player.Character.HumanoidRootPart
+                        local myHrp = LocalPlayer.Character.HumanoidRootPart
+                        local distance = (myHrp.Position - enemyHrp.Position).Magnitude
+                        
+                        -- Якщо гравець підійшов ближче ніж на 16 стоп і він ще живий
+                        if distance < 16 and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                            -- Екіпіруємо ніж, якщо він у бекпаку
+                            if knife.Parent == LocalPlayer.Backpack then
+                                LocalPlayer.Humanoid:EquipTool(knife)
+                            end
+                            -- Активуємо швидкий удар через вбудований івент MM2
+                            knife:Activate()
+                        end
                     end
                 end
             end
@@ -237,17 +266,19 @@ local function createToggle(parentPage, text, defaultState, callback)
     end)
 end
 
--- НАПОВНЕННЯ СТАНДАРТНИХ КНОПОК В ТАБІ MAIN
+-- КНОПКИ ДЛЯ ВКЛАДКИ MAIN
 createToggle(Pages["Main"], "Enable Role ESP", false, function(v) ESP_Enabled = v updateESPState() end)
 createToggle(Pages["Main"], "Auto-Pick Gun", false, function(v) AutoPick_Enabled = v end)
 createToggle(Pages["Main"], "Anti-Fling (NoCollide)", false, function(v) AntiFling_Enabled = v end)
+
+-- КНОПКИ ДЛЯ ВКЛАДКИ MURDER
+createToggle(Pages["Murder"], "Enable Kill Aura", false, function(v) KillAura_Enabled = v end)
 
 local function makeLabel(p, txt)
     local lbl = Instance.new("TextLabel")
     lbl.Size, lbl.BackgroundTransparency, lbl.Text = UDim2.new(1, 0, 0, 30), 1, txt
     lbl.TextColor3, lbl.TextSize, lbl.Font, lbl.Parent = Color3.fromRGB(100, 100, 105), 14, Enum.Font.SourceSansItalic, p
 end
-makeLabel(Pages["Murder"], "Murder functions will be here soon...")
 makeLabel(Pages["Sheriff"], "Sheriff functions will be here soon...")
 
 Players.PlayerAdded:Connect(function(p) if ESP_Enabled then manageESP(p) end end)
